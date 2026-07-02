@@ -1,0 +1,67 @@
+Step 1 — Open Local Ubuntu Terminal
+sudo apt update && sudo apt upgrade -y
+Step 2 — Add HashiCorp GPG Key
+wget -O- https://apt.releases.hashicorp.com/gpg | \
+sudo gpg --dearmor -o \
+/usr/share/keyrings/hashicorp-archive-keyring.gpg
+Step 3 — Add HashiCorp Repo
+echo "deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] \
+https://apt.releases.hashicorp.com \
+$(lsb_release -cs) main" | \
+sudo tee /etc/apt/sources.list.d/hashicorp.list
+Step 4 — Install Vault
+sudo apt update
+sudo apt install vault -y
+Verify:
+vault --version
+Shows: Vault v1.x.x ✅
+Step 5 — Start Vault Server
+Open Terminal 1 — Run Vault:
+vault server -dev \
+  -dev-root-token-id="root" \
+  -dev-listen-address="0.0.0.0:8200"
+⚠️ Keep this terminal open! Don't close!
+Step 6 — Open Terminal 2 — Set Environment
+export VAULT_ADDR='http://127.0.0.1:8200'
+export VAULT_TOKEN='root'
+
+# Verify connection
+vault status
+Shows Sealed: false ✅
+Step 7 — Store Your Secrets in Vault
+# Store Harbor credentials
+vault kv put secret/harbor \
+  username=admin \
+  password=YourHarborPassword
+
+# Store SonarQube token
+vault kv put secret/sonarqube \
+  token=YourSonarToken
+
+# Store GitHub credentials
+vault kv put secret/github \
+  username=YourGithubUser \
+  token=YourGithubToken
+Step 8 — Read Secrets (Verify)
+vault kv get secret/harbor
+vault kv get secret/sonarqube
+Step 9 — Open Vault UI in Browser
+http://localhost:8200
+Method: Token
+Token: root
+Click Sign In ✅
+Step 10 — Connect Vault to Jenkins
+In Jenkins:
+Go to Manage Jenkins → Plugins
+Search HashiCorp Vault
+Install & restart
+Then:
+Manage Jenkins → Configure System
+Find Vault section
+Add:
+Field
+Value
+Vault URL
+http://localhost:8200
+Token
+root
