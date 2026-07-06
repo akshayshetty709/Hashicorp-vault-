@@ -1,0 +1,96 @@
+pipeline {
+    agent any
+
+    environment {
+        HARBOR_REGISTRY = "localhost"
+        HARBOR_PROJECT  = "library"
+        APP_NAME        = "abc-backend"
+        IMAGE_TAG       = "${env.BUILD_NUMBER}"
+        FULL_IMAGE      = "${HARBOR_REGISTRY}/${HARBOR_PROJECT}/${APP_NAME}:${IMAGE_TAG}"
+    }
+
+    stages {
+
+        stage('Checkout') {
+            steps {
+                git branch: 'main', 
+                url: 'https://github.com/Siva290395/abc-backend.git'
+            }
+        }
+
+        stage('SonarQube Analysis') {
+            steps {
+                withVault(
+                    vaultSecrets: [[
+                        path: 'secret/sonarqube',
+                        secretValues: [
+                            [envVar: 'SONAR_TOKEN', 
+                             vaultKey: 'token']
+                        ]
+                    ]]
+                ) {
+                    withSonarQubeEnv('SonarQube') {
+                        sh """
+                        ${tool 'SonarScanner'}/bin/sonar-scanner \
+                        -Dsonar.projectKey=abc-backend \
+                        -Dsonar.sources=. \
+                        -Dsonar.login=$SONAR_TOKEN
+                        """
+                    }
+                }
+            }
+        }
+
+        stage('Quality Gate') {
+            steps {
+                timeout(time: 5, unit: 'MINUTES') {
+                    waitForQualityGate abortPipeline: true
+                }
+            }
+        }
+
+        stage('Build Docker Image') {
+            steps {
+                sh "docker build -t ${FULL_IMAGE} ."
+            }
+        }
+
+        stage('Login & Push to Harbor') {
+            steps {
+                withVault(
+                    vaultSecrets: [[
+                        path: 'secret/harbor',
+                        secretValues: [
+                            [envVar: 'HARBOR_USER', 
+                             vaultKey: 'username'],
+                            [envVar: 'HARBOR_PASS', 
+                             vaultKey: 'password']
+                        ]
+                    ]]
+                ) {
+                    sh '''
+                    echo "$HARBOR_PASS" | docker login localhost \
+                        -u "$HARBOR_USER" --password-stdin
+                    docker push ${FULL_IMAGE}
+                    '''
+                }
+            }
+        }
+
+        stage('Run Container') {
+            steps {
+                sh 'docker rm -f backend || true'
+                sh "docker run -d -p 5000:5000 --name backend ${FULL_IMAGE}"
+            }
+        }
+    }
+
+    post {
+        success {
+            echo "✅ Success — Build #${env.BUILD_NUMBER} pushed to Harbor!"
+        }
+        failure {
+            echo "❌ Failed — Check the red stage!"
+        }
+    }
+}
